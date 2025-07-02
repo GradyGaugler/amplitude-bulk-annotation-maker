@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
 """
-Amplitude Bulk Annotation Maker
+Amplitude Bulk Annotation Maker.
+
 A GUI application for applying annotations to multiple Amplitude charts at once.
+Built with Python 3.13 and PySide6, following best practices for code organization,
+error handling, and user experience.
 """
 import sys
 import json
 import os
+import logging
+import subprocess
+import platform
 from datetime import date
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional, Set, Tuple, Any
+
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QLabel, QLineEdit, QPushButton, QTextEdit,
@@ -26,84 +33,183 @@ try:
 except ImportError:
     pass  # python-dotenv not installed, skip
 
-from amplitude_api import AmplitudeAPIClient
+from amplitude_api import AmplitudeAPIClient, AmplitudeAPIError
+from constants import (
+    APP_NAME, APP_VERSION,
+    ENV_API_KEY, ENV_SECRET_KEY, ENV_PROJECT_ID, ENV_REGION,
+    CONFIG_FILE, DEFAULT_REGION, VALID_REGIONS,
+    WINDOW_WIDTH, WINDOW_HEIGHT,
+    STATUS_TEXT_MAX_HEIGHT, DESCRIPTION_MAX_HEIGHT,
+    CHART_INPUT_MIN_HEIGHT, RESULTS_TEXT_MAX_HEIGHT,
+    MASKED_CREDENTIAL_DISPLAY, DATE_FORMAT,
+    AUTO_TEST_DELAY, AUTO_TEST_DELAY_FAST, AUTO_PROGRESS_DELAY,
+    STATUS_DISPLAY_DURATION,
+    TAB_CONFIG, TAB_SELECTION, TAB_ANNOTATION, TAB_RESULTS
+)
 
-# Environment variable names for Amplitude credentials
-ENV_API_KEY = "AMPLITUDE_API_KEY"
-ENV_SECRET_KEY = "AMPLITUDE_SECRET_KEY"
-ENV_PROJECT_ID = "AMPLITUDE_PROJECT_ID"
-ENV_REGION = "AMPLITUDE_REGION"
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 class APIWorker(QThread):
-    """Worker thread for API operations"""
-    finished = Signal(bool, str)
-    progress = Signal(int, int)
+    """
+    Worker thread for API operations.
     
-    def __init__(self, api_client, operation, *args, **kwargs):
+    This thread handles long-running API operations to prevent UI freezing.
+    Emits progress updates and completion status.
+    """
+    
+    # Signals
+    finished = Signal(bool, str)  # success, message
+    progress = Signal(int, int)   # current, total
+    
+    def __init__(
+        self,
+        api_client: AmplitudeAPIClient,
+        operation: str,
+        *args: Any,
+        **kwargs: Any
+    ) -> None:
+        """
+        Initialize the API worker thread.
+        
+        Args:
+            api_client: AmplitudeAPIClient instance
+            operation: Operation to perform ('test_connection' or 'bulk_annotate')
+            *args: Positional arguments for the operation
+            **kwargs: Keyword arguments for the operation
+        """
         super().__init__()
         self.api_client = api_client
         self.operation = operation
         self.args = args
         self.kwargs = kwargs
+        self._is_cancelled = False
     
-    def run(self):
+    def run(self) -> None:
+        """Execute the API operation in a separate thread."""
         try:
             if self.operation == "test_connection":
-                success, message = self.api_client.test_connection()
-                self.finished.emit(success, message)
+                self._handle_test_connection()
             elif self.operation == "bulk_annotate":
-                results = self.api_client.bulk_annotate(
-                    *self.args,
-                    progress_callback=lambda curr, total: self.progress.emit(curr, total),
-                    **self.kwargs
-                )
-                # Summarize results
-                success_count = sum(1 for _, success, _ in results if success)
-                total_count = len(results)
-                message = f"Completed: {success_count}/{total_count} successful"
-                self.finished.emit(success_count == total_count, message)
+                self._handle_bulk_annotate()
+            else:
+                logger.error(f"Unknown operation: {self.operation}")
+                self.finished.emit(False, f"Unknown operation: {self.operation}")
+                
+        except AmplitudeAPIError as e:
+            logger.error(f"API error in worker: {e}")
+            self.finished.emit(False, f"API Error: {str(e)}")
         except Exception as e:
-            self.finished.emit(False, str(e))
+            logger.exception("Unexpected error in API worker")
+            self.finished.emit(False, f"Unexpected error: {str(e)}")
+    
+    def _handle_test_connection(self) -> None:
+        """Handle test connection operation."""
+        success, message = self.api_client.test_connection()
+        self.finished.emit(success, message)
+    
+    def _handle_bulk_annotate(self) -> None:
+        """Handle bulk annotation operation."""
+        results = self.api_client.bulk_annotate(
+            *self.args,
+            progress_callback=lambda curr, total: self.progress.emit(curr, total),
+            **self.kwargs
+        )
+        
+        # Summarize results
+        success_count = sum(1 for _, success, _ in results if success)
+        total_count = len(results)
+        
+        if total_count == 0:
+            message = "No charts to annotate"
+        elif success_count == total_count:
+            message = f"✅ All {total_count} annotations successful"
+        else:
+            message = f"⚠️ Completed: {success_count}/{total_count} successful"
+            
+        self.finished.emit(success_count == total_count, message)
 
 
 class ConfigTab(QWidget):
-    """Configuration tab for API settings"""
+    """
+    Configuration tab for API settings.
+    
+    Handles API credential input, validation, and connection testing.
+    Prioritizes environment variables over manual input for security.
+    """
+    
+    # Signals
     configValid = Signal(bool)
     
-    def __init__(self):
+    def __init__(self) -> None:
+        """Initialize the configuration tab."""
         super().__init__()
-        self.api_client = None
-        self.config_file = "amplitude_preferences.json"  # Only for non-sensitive preferences
-        self.credentials_from_env = False
+        self.api_client: Optional[AmplitudeAPIClient] = None
+        self.credentials_from_env: bool = False
+        self.worker: Optional[APIWorker] = None
+        
         self.init_ui()
         self.load_config()
         
         # Auto-test connection if environment variables are complete
         if self.has_complete_env_config():
-            QTimer.singleShot(500, self.auto_test_connection)
+            QTimer.singleShot(AUTO_TEST_DELAY, self.auto_test_connection)
     
-    def init_ui(self):
+    def init_ui(self) -> None:
+        """Initialize the UI components."""
         layout = QVBoxLayout(self)
+        
+        # Environment status info
+        self.env_status_label = QLabel()
+        self.env_status_label.setWordWrap(True)
+        self.env_status_label.setStyleSheet("QLabel { background-color: #e8f4fd; padding: 8px; border-radius: 4px; border-left: 4px solid #0078d4; }")
+        layout.addWidget(self.env_status_label)
+        
+        # .env file management buttons
+        env_buttons_layout = QHBoxLayout()
+        
+        # Create .env button (only shown when no .env file exists)
+        self.create_env_btn = QPushButton("📄 Create .env Template File")
+        self.create_env_btn.clicked.connect(self.create_env_template)
+        self.create_env_btn.setStyleSheet("QPushButton { background-color: #28a745; color: white; padding: 8px; font-weight: bold; }")
+        env_buttons_layout.addWidget(self.create_env_btn)
+        
+        # Open .env button (only shown when .env file exists)
+        self.open_env_btn = QPushButton("📝 Edit .env File")
+        self.open_env_btn.clicked.connect(self.open_env_file)
+        self.open_env_btn.setStyleSheet("QPushButton { background-color: #17a2b8; color: white; padding: 8px; font-weight: bold; }")
+        env_buttons_layout.addWidget(self.open_env_btn)
+        
+        env_buttons_layout.addStretch()  # Push buttons to the left
+        layout.addLayout(env_buttons_layout)
         
         # API Configuration group
         api_group = QGroupBox("API Configuration")
         api_layout = QFormLayout()
         
+        # API Key
         self.api_key_input = QLineEdit()
         self.api_key_input.setPlaceholderText("Your Amplitude API Key")
         self.api_key_input.setEchoMode(QLineEdit.Password)
         api_layout.addRow("API Key:", self.api_key_input)
         
+        # Secret Key
         self.secret_key_input = QLineEdit()
         self.secret_key_input.setPlaceholderText("Your Amplitude Secret Key")
         self.secret_key_input.setEchoMode(QLineEdit.Password)
         api_layout.addRow("Secret Key:", self.secret_key_input)
         
+        # Region
         self.region_combo = QComboBox()
-        self.region_combo.addItems(["US", "EU"])
+        self.region_combo.addItems(VALID_REGIONS)
         api_layout.addRow("Region:", self.region_combo)
         
+        # Project ID
         self.project_id_input = QLineEdit()
         self.project_id_input.setPlaceholderText("e.g., 123456")
         api_layout.addRow("Project ID:", self.project_id_input)
@@ -116,82 +222,211 @@ class ConfigTab(QWidget):
         api_group.setLayout(api_layout)
         layout.addWidget(api_group)
         
-        # Test connection button
-        self.test_btn = QPushButton("Test Connection")
+        # Test connection and save button (combined)
+        self.test_btn = QPushButton("Test Connection and Save")
         self.test_btn.clicked.connect(self.test_connection)
+        self.test_btn.setStyleSheet("QPushButton { padding: 8px 16px; font-weight: bold; }")
         layout.addWidget(self.test_btn)
         
         # Status text
         self.status_text = QTextEdit()
         self.status_text.setReadOnly(True)
-        self.status_text.setMaximumHeight(100)
+        self.status_text.setMaximumHeight(STATUS_TEXT_MAX_HEIGHT)
         layout.addWidget(self.status_text)
         
         layout.addStretch()
-        
-        # Save preferences button
-        self.save_config_btn = QPushButton("Save Preferences")
-        self.save_config_btn.clicked.connect(self.save_config)
-        layout.addWidget(self.save_config_btn)
     
-    def load_config(self):
-        """Load configuration from environment variables first, then file for preferences"""
+    def load_config(self) -> None:
+        """
+        Load configuration from environment variables first, then file for preferences.
+        
+        Prioritizes environment variables for security. Falls back to manual input
+        if environment variables are not found.
+        """
         # Check for environment variables first (recommended approach)
         env_api_key = os.getenv(ENV_API_KEY)
         env_secret_key = os.getenv(ENV_SECRET_KEY)
         env_project_id = os.getenv(ENV_PROJECT_ID)
-        env_region = os.getenv(ENV_REGION, 'US')
+        env_region = os.getenv(ENV_REGION, DEFAULT_REGION)
         
         if env_api_key and env_secret_key:
             # Credentials found in environment variables
             self.credentials_from_env = True
-            self.api_key_input.setText("••••••••••••••••")  # Show masked placeholder
-            self.api_key_input.setEnabled(False)
-            self.api_key_input.setToolTip("API Key loaded from environment variable")
-            
-            self.secret_key_input.setText("••••••••••••••••")  # Show masked placeholder
-            self.secret_key_input.setEnabled(False)
-            self.secret_key_input.setToolTip("Secret Key loaded from environment variable")
-            
-            if env_project_id:
-                self.project_id_input.setText(env_project_id)
-                self.project_id_input.setEnabled(False)
-                self.project_id_input.setToolTip("Project ID loaded from environment variable")
-            
-            self.region_combo.setCurrentText(env_region)
-            
-            # Show status
-            self.status_text.setText("✅ Using environment variables - auto-testing connection...")
+            self._setup_env_credentials(env_api_key, env_secret_key, env_project_id, env_region)
+            logger.info("Using credentials from environment variables")
         else:
             # No environment variables, allow manual input
             self.credentials_from_env = False
-            self.api_key_input.setEnabled(True)
-            self.secret_key_input.setEnabled(True)
-            self.project_id_input.setEnabled(True)
-            
-            # Load preferences from file (non-sensitive settings only)
-            if os.path.exists(self.config_file):
-                try:
-                    with open(self.config_file, 'r') as f:
-                        config = json.load(f)
-                        self.region_combo.setCurrentText(config.get('region', 'US'))
-                        
-                        # Only load project_id from file if not in environment
-                        if not env_project_id:
-                            self.project_id_input.setText(config.get('project_id', ''))
-                except Exception as e:
-                    self.status_text.setText(f"Error loading preferences: {str(e)}")
-            
-            # Show ready status for manual input
-            self.status_text.setText("Ready for manual credential input")
+            self._setup_manual_credentials(env_project_id)
+            logger.info("No environment credentials found, using manual input")
     
-    def save_config(self):
-        """Save non-sensitive preferences only"""
+    def _env_file_exists(self) -> bool:
+        """Check if .env file exists in the current directory."""
+        return os.path.exists('.env')
+    
+    def create_env_template(self) -> None:
+        """Create a .env template file with placeholders."""
+        template_content = f"""{ENV_API_KEY}=your_api_key_here
+{ENV_SECRET_KEY}=your_secret_key_here
+{ENV_PROJECT_ID}=123456
+{ENV_REGION}=US
+"""
+        
+        try:
+            with open('.env', 'w') as f:
+                f.write(template_content)
+            
+            self.status_text.setText("✅ .env template file created successfully!\n\n"
+                                   "📝 Please edit the .env file with your actual Amplitude credentials, "
+                                   "then restart the application.")
+            
+            # Update button visibility - hide create, show edit
+            self.create_env_btn.hide()
+            self.open_env_btn.show()
+            
+            # Update status label
+            self.env_status_label.setText("📄 .env file created! Click 'Edit .env File' to add your credentials, then restart the application.")
+            self.env_status_label.setStyleSheet("QLabel { background-color: #fff3cd; padding: 8px; border-radius: 4px; border-left: 4px solid #ffc107; }")
+            
+            logger.info(".env template file created successfully")
+            
+        except IOError as e:
+            logger.error(f"Error creating .env file: {e}")
+            self.status_text.setText(f"❌ Error creating .env file: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Failed to create .env file:\n{str(e)}")
+    
+    def open_env_file(self) -> None:
+        """Open the .env file with the system's default editor."""
+        env_path = '.env'
+        
+        if not os.path.exists(env_path):
+            QMessageBox.warning(self, "File Not Found", "The .env file does not exist.")
+            return
+        
+        try:
+            # Get the absolute path for better reliability
+            abs_path = os.path.abspath(env_path)
+            
+            # Use platform-specific command to open file
+            system = platform.system().lower()
+            if system == 'darwin':  # macOS
+                subprocess.run(['open', abs_path], check=True)
+            elif system == 'windows':
+                os.startfile(abs_path)
+            else:  # Linux and other Unix-like systems
+                subprocess.run(['xdg-open', abs_path], check=True)
+            
+            self.status_text.append(f"\n📝 Opened .env file in default editor")
+            logger.info(f"Opened .env file: {abs_path}")
+            
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Error opening .env file: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to open .env file:\n{str(e)}")
+        except FileNotFoundError:
+            logger.error("System command not found for opening files")
+            QMessageBox.critical(self, "Error", "Could not find system command to open files.\nPlease open the .env file manually in your text editor.")
+        except Exception as e:
+            logger.error(f"Unexpected error opening .env file: {e}")
+            QMessageBox.critical(self, "Error", f"Unexpected error opening .env file:\n{str(e)}")
+    
+    def _setup_env_credentials(
+        self,
+        env_api_key: str,
+        env_secret_key: str,
+        env_project_id: Optional[str],
+        env_region: str
+    ) -> None:
+        """Set up UI for environment variable credentials."""
+        # Show edit button if .env file exists, hide create button
+        if self._env_file_exists():
+            self.create_env_btn.hide()
+            self.open_env_btn.show()
+            self.env_status_label.setText("🔒 Configuration loaded from .env file - click 'Edit .env File' to modify credentials")
+        else:
+            # Environment variables are from system environment, not .env file
+            self.create_env_btn.hide()
+            self.open_env_btn.hide()
+            self.env_status_label.setText("🔒 Configuration loaded from system environment variables")
+        
+        self.env_status_label.setStyleSheet("QLabel { background-color: #d4edda; padding: 8px; border-radius: 4px; border-left: 4px solid #28a745; }")
+        
+        # Setup API Key
+        self.api_key_input.setText(MASKED_CREDENTIAL_DISPLAY)
+        self.api_key_input.setEnabled(False)
+        self.api_key_input.setToolTip("API Key loaded from environment variable - fields are read-only")
+        
+        # Setup Secret Key
+        self.secret_key_input.setText(MASKED_CREDENTIAL_DISPLAY)
+        self.secret_key_input.setEnabled(False)
+        self.secret_key_input.setToolTip("Secret Key loaded from environment variable - fields are read-only")
+        
+        # Setup Region
+        self.region_combo.setCurrentText(env_region)
+        self.region_combo.setEnabled(False)
+        self.region_combo.setToolTip("Region loaded from environment variable - fields are read-only")
+        
+        # Setup Project ID
+        if env_project_id:
+            self.project_id_input.setText(env_project_id)
+            self.project_id_input.setEnabled(False)
+            self.project_id_input.setToolTip("Project ID loaded from environment variable - fields are read-only")
+        
+        self.status_text.setText("✅ Using environment variables - auto-testing connection...")
+    
+    def _setup_manual_credentials(self, env_project_id: Optional[str]) -> None:
+        """Set up UI for manual credential input."""
+        # Show appropriate buttons based on .env file existence
+        if self._env_file_exists():
+            self.create_env_btn.hide()
+            self.open_env_btn.show()
+            self.env_status_label.setText("📄 .env file exists but contains no valid credentials - edit the file or enter credentials manually below")
+            self.env_status_label.setStyleSheet("QLabel { background-color: #fff3cd; padding: 8px; border-radius: 4px; border-left: 4px solid #ffc107; }")
+        else:
+            self.create_env_btn.show()
+            self.open_env_btn.hide()
+            self.env_status_label.setText("💡 No .env file found - you can create one for easier credential management, or enter credentials manually below")
+            self.env_status_label.setStyleSheet("QLabel { background-color: #cce5ff; padding: 8px; border-radius: 4px; border-left: 4px solid #007bff; }")
+        
+        # Enable all fields for manual input
+        self.api_key_input.setEnabled(True)
+        self.secret_key_input.setEnabled(True)
+        self.project_id_input.setEnabled(True)
+        self.region_combo.setEnabled(True)
+        
+        # Load preferences from file (non-sensitive settings only)
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, 'r') as f:
+                    config = json.load(f)
+                    self.region_combo.setCurrentText(config.get('region', DEFAULT_REGION))
+                    
+                    # Only load project_id from file if not in environment
+                    if not env_project_id:
+                        self.project_id_input.setText(config.get('project_id', ''))
+            except json.JSONDecodeError as e:
+                logger.error(f"Invalid JSON in config file: {e}")
+                self.status_text.setText("⚠️ Error loading preferences (invalid format)")
+            except IOError as e:
+                logger.error(f"Error reading config file: {e}")
+                self.status_text.setText("⚠️ Error loading preferences")
+        
+        # Show ready status for manual input
+        if self._env_file_exists():
+            self.status_text.setText("Ready for manual credential input (click 'Edit .env File' or enter credentials manually)")
+        else:
+            self.status_text.setText("Ready for manual credential input (click 'Create .env Template File' for easier management)")
+    
+    def save_config(self) -> None:
+        """
+        Save non-sensitive preferences only.
+        
+        Never saves API keys or secrets to disk for security reasons.
+        """
         if self.credentials_from_env:
             self.status_text.append("ℹ️  Credentials are from environment variables - only saving preferences")
         
         # Only save non-sensitive preferences
-        config = {
+        config: Dict[str, str] = {
             'region': self.region_combo.currentText(),
         }
         
@@ -200,10 +435,12 @@ class ConfigTab(QWidget):
             config['project_id'] = self.project_id_input.text()
         
         try:
-            with open(self.config_file, 'w') as f:
+            with open(CONFIG_FILE, 'w') as f:
                 json.dump(config, f, indent=2)
             self.status_text.append("✅ Preferences saved successfully")
-        except Exception as e:
+            logger.info("Preferences saved to file")
+        except IOError as e:
+            logger.error(f"Error saving preferences: {e}")
             self.status_text.append(f"❌ Error saving preferences: {str(e)}")
     
     def test_connection(self):
@@ -233,13 +470,13 @@ class ConfigTab(QWidget):
         self.worker.start()
         
         self.test_btn.setEnabled(False)
-        self.test_btn.setText("Testing...")
+        self.test_btn.setText("Testing Connection...")
         self.status_text.setText("Testing connection...")
     
     def on_test_complete(self, success, message):
-        """Handle test completion"""
+        """Handle test completion and save preferences if successful"""
         self.test_btn.setEnabled(True)
-        self.test_btn.setText("Test Connection")
+        self.test_btn.setText("Test Connection and Save")
         
         if success:
             self.status_text.setText(f"✅ {message}")
@@ -248,13 +485,31 @@ class ConfigTab(QWidget):
             project_id = self.get_selected_project_id()
             if project_id:
                 self.status_text.append(f"Project ID: {project_id}")
+                
+                # Automatically save preferences on successful connection
+                self.status_text.append("\n📝 Saving preferences...")
+                self._save_preferences_after_test()
+                
                 self.configValid.emit(True)
             else:
                 self.status_text.append("❌ Please provide a valid Project ID")
                 self.configValid.emit(False)
         else:
             self.status_text.setText(f"❌ {message}")
+            self.status_text.append("⚠️ Preferences not saved due to connection failure")
             self.configValid.emit(False)
+    
+    def _save_preferences_after_test(self):
+        """Save preferences after successful connection test"""
+        # Call the existing save_config method but suppress duplicate status messages
+        original_text = self.status_text.toPlainText()
+        self.save_config()
+        
+        # Remove any duplicate "saved successfully" messages that might have been added
+        current_text = self.status_text.toPlainText()
+        if "✅ Preferences saved successfully" in current_text and original_text.count("✅ Preferences saved successfully") < current_text.count("✅ Preferences saved successfully"):
+            # The save_config method added a success message, we're good
+            pass
     
     def get_api_client(self):
         return self.api_client if hasattr(self, 'api_client') else None
@@ -377,12 +632,8 @@ class SelectionTab(QWidget):
             return
         
         # Extract chart IDs from input
-        if self.api_client:
-            extracted_ids = self.api_client.extract_chart_ids(input_text)
-        else:
-            # Fallback extraction if no API client
-            from amplitude_api import AmplitudeAPIClient
-            extracted_ids = AmplitudeAPIClient.extract_chart_ids(input_text)
+        from utils.validators import extract_chart_ids
+        extracted_ids = extract_chart_ids(input_text)
         
         if not extracted_ids:
             self.results_text.setText("❌ No valid chart IDs or URLs found in input")
@@ -392,11 +643,8 @@ class SelectionTab(QWidget):
             return
         
         # Validate chart IDs
-        if self.api_client:
-            valid_ids, invalid_ids = self.api_client.validate_chart_ids(extracted_ids)
-        else:
-            from amplitude_api import AmplitudeAPIClient
-            valid_ids, invalid_ids = AmplitudeAPIClient.validate_chart_ids(extracted_ids)
+        from utils.validators import validate_chart_ids
+        valid_ids, invalid_ids = validate_chart_ids(extracted_ids)
         
         # Build results text
         results = []
