@@ -6,7 +6,6 @@ This module provides a robust client for interacting with the Amplitude API,
 with features including retry logic, session reuse, and comprehensive error handling.
 """
 import base64
-import re
 import logging
 from typing import List, Dict, Optional, Tuple, Callable, Any
 from datetime import date
@@ -14,16 +13,14 @@ from urllib.parse import urljoin
 
 import requests
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
+from urllib3.util.retry import Retry
 
 from constants import (
     API_TIMEOUT,
     API_BASE_URL_US,
     API_BASE_URL_EU,
     API_ANNOTATIONS_ENDPOINT,
-    VALID_REGIONS,
-    CHART_ID_PATTERN,
-    CHART_URL_PATTERN
+    VALID_REGIONS
 )
 
 # Configure logging
@@ -296,11 +293,11 @@ class AmplitudeAPIClient:
         
         return results
     
-    def __enter__(self):
+    def __enter__(self) -> 'AmplitudeAPIClient':
         """Context manager entry."""
         return self
     
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Optional[type], exc_val: Optional[BaseException], exc_tb: Optional[Any]) -> None:
         """Context manager exit - close session."""
         self.close()
     

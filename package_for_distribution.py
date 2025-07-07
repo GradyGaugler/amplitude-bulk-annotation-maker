@@ -10,7 +10,7 @@ import shutil
 import zipfile
 import logging
 from datetime import datetime
-from typing import List, Optional
+from typing import List
 
 # Configure logging
 logging.basicConfig(
@@ -19,23 +19,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Import constants if available, otherwise define defaults
-try:
-    from constants import DISTRIBUTION_FILES, DISTRIBUTION_DIR, DISTRIBUTION_INSTRUCTIONS_FILE
-except ImportError:
-    DISTRIBUTION_FILES = [
-        'amplitude_bulk_annotator.py',
-        'amplitude_api.py',
-        'requirements.txt',
-        'README.md',
-        'run.bat',
-        'run.sh',
-        '.gitignore',
-        'SETUP_ENVIRONMENT.md',
-        'constants.py'
-    ]
-    DISTRIBUTION_DIR = 'dist'
-    DISTRIBUTION_INSTRUCTIONS_FILE = 'DISTRIBUTION_INSTRUCTIONS.txt'
+# Import constants
+from constants import DISTRIBUTION_FILES, DISTRIBUTION_DIR, DISTRIBUTION_INSTRUCTIONS_FILE
 
 
 def create_distribution_package() -> str:
@@ -79,7 +64,7 @@ def create_distribution_package() -> str:
     
     # Create instructions file
     instructions_path = os.path.join(DISTRIBUTION_DIR, DISTRIBUTION_INSTRUCTIONS_FILE)
-    with open(instructions_path, 'w') as f:
+    with open(instructions_path, 'w', encoding='utf-8') as f:
         f.write("""Amplitude Bulk Annotation Maker - Distribution Instructions
 ==========================================================
 

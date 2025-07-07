@@ -14,17 +14,16 @@ import subprocess
 import platform
 from datetime import date
 from typing import List, Dict, Optional, Set, Tuple, Any
+from functools import lru_cache
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QLabel, QLineEdit, QPushButton, QTextEdit,
-    QGroupBox, QComboBox, QListWidget, QListWidgetItem,
-    QCompleter, QDateEdit, QMessageBox, QProgressDialog,
-    QSplitter, QTreeWidget, QTreeWidgetItem, QCheckBox,
-    QFormLayout, QDialogButtonBox, QDialog, QFileDialog
+    QGroupBox, QComboBox, QDateEdit, QMessageBox, QProgressDialog,
+    QFormLayout, QFileDialog
 )
-from PySide6.QtCore import Qt, QDate, Signal, QThread, QTimer, QStringListModel
-from PySide6.QtGui import QIcon, QFont
+from PySide6.QtCore import Qt, QDate, Signal, QThread, QTimer
+from PySide6.QtGui import QFont
 
 # Load environment variables from .env file
 try:
@@ -35,22 +34,22 @@ except ImportError:
 
 from amplitude_api import AmplitudeAPIClient, AmplitudeAPIError
 from constants import (
-    APP_NAME, APP_VERSION,
     ENV_API_KEY, ENV_SECRET_KEY, ENV_PROJECT_ID, ENV_REGION,
     CONFIG_FILE, DEFAULT_REGION, VALID_REGIONS,
-    WINDOW_WIDTH, WINDOW_HEIGHT,
     STATUS_TEXT_MAX_HEIGHT, DESCRIPTION_MAX_HEIGHT,
     CHART_INPUT_MIN_HEIGHT, RESULTS_TEXT_MAX_HEIGHT,
-    MASKED_CREDENTIAL_DISPLAY, DATE_FORMAT,
-    AUTO_TEST_DELAY, AUTO_TEST_DELAY_FAST, AUTO_PROGRESS_DELAY,
-    STATUS_DISPLAY_DURATION,
-    TAB_CONFIG, TAB_SELECTION, TAB_ANNOTATION, TAB_RESULTS
+    MASKED_CREDENTIAL_DISPLAY,
+    AUTO_TEST_DELAY, AUTO_TEST_DELAY_FAST
 )
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('amplitude_bulk_annotator.log', encoding='utf-8')
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -195,13 +194,13 @@ class ConfigTab(QWidget):
         # API Key
         self.api_key_input = QLineEdit()
         self.api_key_input.setPlaceholderText("Your Amplitude API Key")
-        self.api_key_input.setEchoMode(QLineEdit.Password)
+        self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         api_layout.addRow("API Key:", self.api_key_input)
         
         # Secret Key
         self.secret_key_input = QLineEdit()
         self.secret_key_input.setPlaceholderText("Your Amplitude Secret Key")
-        self.secret_key_input.setEchoMode(QLineEdit.Password)
+        self.secret_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         api_layout.addRow("Secret Key:", self.secret_key_input)
         
         # Region
@@ -523,11 +522,12 @@ class ConfigTab(QWidget):
         project_id = self.project_id_input.text().strip()
         return int(project_id) if project_id.isdigit() else None
     
-    def has_complete_env_config(self):
+    @lru_cache(maxsize=1)
+    def has_complete_env_config(self) -> bool:
         """Check if all required environment variables are set"""
-        return (os.getenv(ENV_API_KEY) and 
-                os.getenv(ENV_SECRET_KEY) and 
-                os.getenv(ENV_PROJECT_ID))
+        return (os.getenv(ENV_API_KEY) is not None and 
+                os.getenv(ENV_SECRET_KEY) is not None and 
+                os.getenv(ENV_PROJECT_ID) is not None)
     
     def auto_test_connection(self):
         """Automatically test connection when environment variables are complete"""
@@ -553,7 +553,7 @@ class SelectionTab(QWidget):
         instructions = QLabel(
             "Enter chart IDs or URLs below (one per line):\n\n"
             "• Chart ID: ez25o7zy\n"
-            "• Full URL: https://app.amplitude.com/analytics/gitkraken/chart/ez25o7zy\n"
+            "• Full URL: https://app.amplitude.com/analytics/demo/chart/ez25o7zy\n"
             "• You can mix both formats and enter multiple charts"
         )
         instructions.setWordWrap(True)
@@ -789,7 +789,7 @@ class ResultsTab(QWidget):
         self.results_text.setText(results_text)
         self.export_btn.setEnabled(True)
     
-    def export_results(self):
+    def export_results(self) -> None:
         """Export results to file"""
         filename, _ = QFileDialog.getSaveFileName(
             self,
@@ -799,22 +799,31 @@ class ResultsTab(QWidget):
         )
         if filename:
             try:
-                with open(filename, 'w') as f:
+                with open(filename, 'w', encoding='utf-8') as f:
                     f.write(self.results_text.toPlainText())
                 QMessageBox.information(self, "Success", "Results exported successfully!")
+                logger.info(f"Results exported to: {filename}")
+            except PermissionError:
+                QMessageBox.critical(self, "Permission Error", "Permission denied. Please choose a different location or check file permissions.")
+                logger.error(f"Permission denied writing to: {filename}")
+            except IOError as e:
+                QMessageBox.critical(self, "File Error", f"Failed to write file: {str(e)}")
+                logger.error(f"IO error writing to {filename}: {e}")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to export: {str(e)}")
+                logger.exception(f"Unexpected error exporting to {filename}")
 
 
 class AmplitudeBulkAnnotator(QMainWindow):
     """Main application window"""
     
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self.api_client = None
+        self.api_client: Optional[AmplitudeAPIClient] = None
+        self.worker: Optional[APIWorker] = None
         self.init_ui()
     
-    def init_ui(self):
+    def init_ui(self) -> None:
         self.setWindowTitle("Amplitude Bulk Annotation Maker")
         self.setGeometry(100, 100, 900, 700)
         
@@ -831,7 +840,7 @@ class AmplitudeBulkAnnotator(QMainWindow):
         header_font.setPointSize(16)
         header_font.setBold(True)
         header_label.setFont(header_font)
-        header_label.setAlignment(Qt.AlignCenter)
+        header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(header_label)
         
         # Tab widget
@@ -877,7 +886,7 @@ class AmplitudeBulkAnnotator(QMainWindow):
             # Visual feedback that config is being auto-completed
             QTimer.singleShot(100, self.show_auto_config_status)
     
-    def show_auto_config_status(self):
+    def show_auto_config_status(self) -> None:
         """Show visual feedback for auto-configuration"""
         # Update window title temporarily
         original_title = self.windowTitle()
@@ -886,7 +895,7 @@ class AmplitudeBulkAnnotator(QMainWindow):
         # Restore original title after a brief moment
         QTimer.singleShot(2000, lambda: self.setWindowTitle(original_title))
     
-    def on_config_valid(self, valid):
+    def on_config_valid(self, valid: bool) -> None:
         """Handle configuration validation"""
         self.tab_widget.setTabEnabled(1, valid)
         if valid:
@@ -899,27 +908,43 @@ class AmplitudeBulkAnnotator(QMainWindow):
             delay = 200 if self.config_tab.has_complete_env_config() else 500
             QTimer.singleShot(delay, lambda: self.tab_widget.setCurrentIndex(1))
     
-    def on_selection_complete(self, has_selection):
+    def on_selection_complete(self, has_selection: bool) -> None:
         """Handle selection completion"""
         self.tab_widget.setTabEnabled(2, has_selection)
         if has_selection:
             # Auto-progress to next tab
             QTimer.singleShot(100, lambda: self.tab_widget.setCurrentIndex(2))
     
-    def on_annotation_ready(self, ready):
+    def on_annotation_ready(self, ready: bool) -> None:
         """Handle annotation readiness"""
         self.apply_btn.setEnabled(ready and self.tab_widget.isTabEnabled(2))
     
-    def apply_annotations(self):
+    def apply_annotations(self) -> None:
         """Apply annotations to selected charts"""
-        # Get data
+        # Validate API client is available
+        if not self.api_client:
+            QMessageBox.critical(self, "Error", "API client not configured. Please configure API settings first.")
+            return
+        
+        # Get data with validation
         project_id = self.config_tab.get_selected_project_id()
+        if not project_id:
+            QMessageBox.critical(self, "Error", "Invalid project ID. Please check your configuration.")
+            return
+            
         chart_ids = self.selection_tab.get_selected_chart_ids()
+        if not chart_ids:
+            QMessageBox.critical(self, "Error", "No valid chart IDs selected. Please select charts first.")
+            return
+            
         annotation_data = self.annotation_tab.get_annotation_data()
+        if not annotation_data.get('label', '').strip():
+            QMessageBox.critical(self, "Error", "Annotation name is required.")
+            return
         
         # Show progress dialog
         progress = QProgressDialog("Applying annotations...", "Cancel", 0, len(chart_ids), self)
-        progress.setWindowModality(Qt.WindowModal)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.show()
         
         # Create worker thread
@@ -937,12 +962,25 @@ class AmplitudeBulkAnnotator(QMainWindow):
         self.worker.progress.connect(lambda curr, total: progress.setValue(curr))
         self.worker.finished.connect(lambda success, message: self.on_annotations_complete(success, message, progress))
         
+        # Handle progress dialog cancellation
+        progress.canceled.connect(self.worker.terminate)
+        
         # Start worker
-        self.worker.start()
+        try:
+            self.worker.start()
+        except Exception as e:
+            progress.close()
+            QMessageBox.critical(self, "Error", f"Failed to start annotation process: {str(e)}")
+            logger.exception("Failed to start worker thread")
     
-    def on_annotations_complete(self, success, message, progress_dialog):
+    def on_annotations_complete(self, success: bool, message: str, progress_dialog: QProgressDialog) -> None:
         """Handle annotation completion"""
         progress_dialog.close()
+        
+        # Clean up worker thread
+        if self.worker:
+            self.worker.deleteLater()
+            self.worker = None
         
         # Show results
         self.tab_widget.setTabEnabled(3, True)
@@ -964,7 +1002,7 @@ class AmplitudeBulkAnnotator(QMainWindow):
             QMessageBox.warning(self, "Partial Success", message)
 
 
-def main():
+def main() -> None:
     app = QApplication(sys.argv)
     app.setStyle('Fusion')  # Modern look
     
