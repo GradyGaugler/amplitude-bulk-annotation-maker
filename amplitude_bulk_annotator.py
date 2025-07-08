@@ -3,7 +3,7 @@
 Amplitude Bulk Annotation Maker.
 
 A GUI application for applying annotations to multiple Amplitude charts at once.
-Built with Python 3.13 and PySide6, following best practices for code organization,
+Built with Python 3.9+ and PySide6, following best practices for code organization,
 error handling, and user experience.
 """
 import sys
@@ -20,10 +20,10 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QLabel, QLineEdit, QPushButton, QTextEdit,
     QGroupBox, QComboBox, QDateEdit, QMessageBox, QProgressDialog,
-    QFormLayout, QFileDialog
+    QFormLayout, QFileDialog, QMenuBar
 )
 from PySide6.QtCore import Qt, QDate, Signal, QThread, QTimer
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QAction
 
 # Load environment variables from .env file
 try:
@@ -169,27 +169,30 @@ class ConfigTab(QWidget):
         self.env_status_label.setStyleSheet("QLabel { background-color: #e8f4fd; padding: 8px; border-radius: 4px; border-left: 4px solid #0078d4; }")
         layout.addWidget(self.env_status_label)
         
-        # .env file management buttons
-        env_buttons_layout = QHBoxLayout()
+        # .env file management note (only shown when .env file exists)
+        self.env_note_layout = QHBoxLayout()
         
-        # Create .env button (only shown when no .env file exists)
-        self.create_env_btn = QPushButton("📄 Create .env Template File")
-        self.create_env_btn.clicked.connect(self.create_env_template)
-        self.create_env_btn.setStyleSheet("QPushButton { background-color: #28a745; color: white; padding: 8px; font-weight: bold; }")
-        env_buttons_layout.addWidget(self.create_env_btn)
+        self.env_file_note = QLabel()
+        self.env_file_note.setWordWrap(True)
+        self.env_file_note.setStyleSheet("QLabel { color: #666; font-size: 11px; font-style: italic; padding: 4px; }")
+        self.env_note_layout.addWidget(self.env_file_note)
         
-        # Open .env button (only shown when .env file exists)
-        self.open_env_btn = QPushButton("📝 Edit .env File")
-        self.open_env_btn.clicked.connect(self.open_env_file)
-        self.open_env_btn.setStyleSheet("QPushButton { background-color: #17a2b8; color: white; padding: 8px; font-weight: bold; }")
-        env_buttons_layout.addWidget(self.open_env_btn)
-        
-        env_buttons_layout.addStretch()  # Push buttons to the left
-        layout.addLayout(env_buttons_layout)
+        self.env_note_layout.addStretch()
+        # Don't add to layout yet - will be added conditionally in load_config
         
         # API Configuration group
         api_group = QGroupBox("API Configuration")
         api_layout = QFormLayout()
+        
+        # Project ID
+        self.project_id_input = QLineEdit()
+        self.project_id_input.setPlaceholderText("e.g., 123456")
+        api_layout.addRow("Project ID:", self.project_id_input)
+        
+        # Region
+        self.region_combo = QComboBox()
+        self.region_combo.addItems(VALID_REGIONS)
+        api_layout.addRow("Region:", self.region_combo)
         
         # API Key
         self.api_key_input = QLineEdit()
@@ -202,16 +205,6 @@ class ConfigTab(QWidget):
         self.secret_key_input.setPlaceholderText("Your Amplitude Secret Key")
         self.secret_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         api_layout.addRow("Secret Key:", self.secret_key_input)
-        
-        # Region
-        self.region_combo = QComboBox()
-        self.region_combo.addItems(VALID_REGIONS)
-        api_layout.addRow("Region:", self.region_combo)
-        
-        # Project ID
-        self.project_id_input = QLineEdit()
-        self.project_id_input.setPlaceholderText("e.g., 123456")
-        api_layout.addRow("Project ID:", self.project_id_input)
         
         # Help text
         help_label = QLabel("Find your API keys and Project ID in Amplitude Settings > Projects")
@@ -279,13 +272,25 @@ class ConfigTab(QWidget):
                                    "📝 Please edit the .env file with your actual Amplitude credentials, "
                                    "then restart the application.")
             
-            # Update button visibility - hide create, show edit
-            self.create_env_btn.hide()
-            self.open_env_btn.show()
-            
             # Update status label
-            self.env_status_label.setText("📄 .env file created! Click 'Edit .env File' to add your credentials, then restart the application.")
+            self.env_status_label.setText("📄 .env file created! Use File → Edit .env File to add your credentials, then restart the application.")
             self.env_status_label.setStyleSheet("QLabel { background-color: #fff3cd; padding: 8px; border-radius: 4px; border-left: 4px solid #ffc107; }")
+            
+            # Update the file note and add to layout if not already present
+            self.env_file_note.setText("💡 Use File → Edit .env File to modify your credentials")
+            
+            # Check if env_note_layout is already in the main layout
+            main_layout = self.layout()
+            if isinstance(main_layout, QVBoxLayout):
+                # Check if the note layout is already added (avoid duplicates)
+                layout_found = False
+                for i in range(main_layout.count()):
+                    if main_layout.itemAt(i).layout() == self.env_note_layout:
+                        layout_found = True
+                        break
+                
+                if not layout_found:
+                    main_layout.insertLayout(1, self.env_note_layout)
             
             logger.info(".env template file created successfully")
             
@@ -336,16 +341,18 @@ class ConfigTab(QWidget):
         env_region: str
     ) -> None:
         """Set up UI for environment variable credentials."""
-        # Show edit button if .env file exists, hide create button
+        # Update status and note based on .env file existence
         if self._env_file_exists():
-            self.create_env_btn.hide()
-            self.open_env_btn.show()
-            self.env_status_label.setText("🔒 Configuration loaded from .env file - click 'Edit .env File' to modify credentials")
+            self.env_status_label.setText("🔒 Configuration loaded from .env file")
+            self.env_file_note.setText("💡 Use File → Edit .env File to modify credentials")
+            # Add the note layout since .env file exists
+            main_layout = self.layout()
+            if isinstance(main_layout, QVBoxLayout):
+                main_layout.insertLayout(1, self.env_note_layout)
         else:
             # Environment variables are from system environment, not .env file
-            self.create_env_btn.hide()
-            self.open_env_btn.hide()
             self.env_status_label.setText("🔒 Configuration loaded from system environment variables")
+            # Don't show .env file note when using system environment variables
         
         self.env_status_label.setStyleSheet("QLabel { background-color: #d4edda; padding: 8px; border-radius: 4px; border-left: 4px solid #28a745; }")
         
@@ -374,17 +381,19 @@ class ConfigTab(QWidget):
     
     def _setup_manual_credentials(self, env_project_id: Optional[str]) -> None:
         """Set up UI for manual credential input."""
-        # Show appropriate buttons based on .env file existence
+        # Update status and note based on .env file existence
         if self._env_file_exists():
-            self.create_env_btn.hide()
-            self.open_env_btn.show()
             self.env_status_label.setText("📄 .env file exists but contains no valid credentials - edit the file or enter credentials manually below")
             self.env_status_label.setStyleSheet("QLabel { background-color: #fff3cd; padding: 8px; border-radius: 4px; border-left: 4px solid #ffc107; }")
+            self.env_file_note.setText("💡 Use File → Edit .env File to update credentials")
+            # Add the note layout since .env file exists
+            main_layout = self.layout()
+            if isinstance(main_layout, QVBoxLayout):
+                main_layout.insertLayout(1, self.env_note_layout)
         else:
-            self.create_env_btn.show()
-            self.open_env_btn.hide()
-            self.env_status_label.setText("💡 No .env file found - you can create one for easier credential management, or enter credentials manually below")
+            self.env_status_label.setText("💡 Enter your Amplitude credentials below")
             self.env_status_label.setStyleSheet("QLabel { background-color: #cce5ff; padding: 8px; border-radius: 4px; border-left: 4px solid #007bff; }")
+            # Don't show .env file note when no .env file exists
         
         # Enable all fields for manual input
         self.api_key_input.setEnabled(True)
@@ -411,9 +420,9 @@ class ConfigTab(QWidget):
         
         # Show ready status for manual input
         if self._env_file_exists():
-            self.status_text.setText("Ready for manual credential input (click 'Edit .env File' or enter credentials manually)")
+            self.status_text.setText("Ready for manual credential input (use File → Edit .env File or enter credentials manually)")
         else:
-            self.status_text.setText("Ready for manual credential input (click 'Create .env Template File' for easier management)")
+            self.status_text.setText("Ready for manual credential input")
     
     def save_config(self) -> None:
         """
@@ -571,31 +580,20 @@ class SelectionTab(QWidget):
             "ez25o7zy\n"
             "abc123\n"
             "https://app.amplitude.com/analytics/demo/chart/xyz789\n"
-            "def456, ghi789"
+            "def456, ghi789\n\n"
+            "Validation indicators will appear inline: ✅ valid, ❌ invalid"
         )
-        self.chart_input.setMinimumHeight(150)
-        self.chart_input.textChanged.connect(self.validate_input)
+        self.chart_input.setMinimumHeight(200)
+        self.chart_input.textChanged.connect(self.on_text_changed)
         input_layout.addWidget(self.chart_input)
         
         # Parse button
-        self.parse_btn = QPushButton("Parse and Validate Chart IDs")
+        self.parse_btn = QPushButton("Validate Chart IDs")
         self.parse_btn.clicked.connect(self.parse_input)
         input_layout.addWidget(self.parse_btn)
         
         input_group.setLayout(input_layout)
         layout.addWidget(input_group)
-        
-        # Validation results
-        results_group = QGroupBox("Validation Results")
-        results_layout = QVBoxLayout()
-        
-        self.results_text = QTextEdit()
-        self.results_text.setReadOnly(True)
-        self.results_text.setMaximumHeight(150)
-        results_layout.addWidget(self.results_text)
-        
-        results_group.setLayout(results_layout)
-        layout.addWidget(results_group)
         
         # Summary
         self.summary_label = QLabel("Ready to parse chart input")
@@ -609,70 +607,93 @@ class SelectionTab(QWidget):
         self.api_client = api_client
         self.project_id = project_id
     
-    def validate_input(self):
-        """Check if there's any input to parse"""
+    def on_text_changed(self):
+        """Handle text changes in the input area"""
         has_input = bool(self.chart_input.toPlainText().strip())
         if has_input:
-            self.summary_label.setText("Input detected - click 'Parse and Validate' to process")
+            self.summary_label.setText("Input detected - click 'Validate Chart IDs' to process")
         else:
             self.summary_label.setText("Ready to parse chart input")
-            self.results_text.clear()
             self.valid_chart_ids = []
             self.selectionComplete.emit(False)
     
     def parse_input(self):
-        """Parse and validate the input text"""
+        """Parse and validate the input text with inline emoji indicators"""
         input_text = self.chart_input.toPlainText()
         
         if not input_text.strip():
-            self.results_text.setText("No input provided")
             self.summary_label.setText("No charts to process")
             self.valid_chart_ids = []
             self.selectionComplete.emit(False)
             return
         
-        # Extract chart IDs from input
-        from utils.validators import extract_chart_ids
-        extracted_ids = extract_chart_ids(input_text)
+        # Temporarily disconnect the text changed signal to avoid recursion
+        self.chart_input.textChanged.disconnect()
         
-        if not extracted_ids:
-            self.results_text.setText("❌ No valid chart IDs or URLs found in input")
-            self.summary_label.setText("No valid charts found")
-            self.valid_chart_ids = []
-            self.selectionComplete.emit(False)
-            return
-        
-        # Validate chart IDs
-        from utils.validators import validate_chart_ids
-        valid_ids, invalid_ids = validate_chart_ids(extracted_ids)
-        
-        # Build results text
-        results = []
-        
-        if valid_ids:
-            results.append(f"✅ Valid Chart IDs ({len(valid_ids)}):")
-            for chart_id in valid_ids:
-                results.append(f"   • {chart_id}")
-        
-        if invalid_ids:
-            results.append(f"\n❌ Invalid Chart IDs ({len(invalid_ids)}):")
-            for chart_id in invalid_ids:
-                results.append(f"   • {chart_id}")
-        
-        if not valid_ids and not invalid_ids:
-            results.append("No chart IDs found")
-        
-        self.results_text.setText("\n".join(results))
-        
-        # Update summary and signal
-        self.valid_chart_ids = valid_ids
-        if valid_ids:
-            count = len(valid_ids)
-            self.summary_label.setText(f"✅ Ready to annotate {count} chart{'s' if count != 1 else ''}")
-            self.selectionComplete.emit(True)
-        else:
-            self.summary_label.setText("❌ No valid charts to process")
-            self.selectionComplete.emit(False)
+        try:
+            # Split input into lines for processing
+            lines = input_text.strip().split('\n')
+            processed_lines = []
+            all_chart_ids = []
+            
+            for line in lines:
+                original_line = line.strip()
+                if not original_line:
+                    processed_lines.append("")
+                    continue
+                
+                # Remove any existing emoji indicators
+                clean_line = original_line
+                for emoji in ['✅', '❌']:
+                    clean_line = clean_line.replace(f' {emoji}', '').replace(f'{emoji} ', '').replace(emoji, '')
+                clean_line = clean_line.strip()
+                
+                # Extract chart IDs from this line
+                from utils.validators import extract_chart_ids, validate_chart_ids
+                line_chart_ids = extract_chart_ids(clean_line)
+                
+                if line_chart_ids:
+                    # Validate the extracted IDs
+                    valid_ids, invalid_ids = validate_chart_ids(line_chart_ids)
+                    all_chart_ids.extend(valid_ids)
+                    
+                    # Add emoji indicator based on validation
+                    if valid_ids and not invalid_ids:
+                        # All IDs in this line are valid
+                        processed_lines.append(f"{clean_line} ✅")
+                    elif invalid_ids and not valid_ids:
+                        # All IDs in this line are invalid
+                        processed_lines.append(f"{clean_line} ❌")
+                    else:
+                        # Mixed results - show both
+                        processed_lines.append(f"{clean_line} ✅❌")
+                else:
+                    # No chart IDs found
+                    processed_lines.append(f"{clean_line} ❌")
+            
+            # Update the text area with indicators
+            new_text = '\n'.join(processed_lines)
+            cursor_position = self.chart_input.textCursor().position()
+            self.chart_input.setPlainText(new_text)
+            
+            # Restore cursor position (approximately)
+            cursor = self.chart_input.textCursor()
+            cursor.setPosition(min(cursor_position, len(new_text)))
+            self.chart_input.setTextCursor(cursor)
+            
+            # Update summary and signal
+            self.valid_chart_ids = list(set(all_chart_ids))  # Remove duplicates
+            if self.valid_chart_ids:
+                count = len(self.valid_chart_ids)
+                self.summary_label.setText(f"✅ Ready to annotate {count} chart{'s' if count != 1 else ''}")
+                self.selectionComplete.emit(True)
+            else:
+                self.summary_label.setText("❌ No valid charts to process")
+                self.selectionComplete.emit(False)
+                
+        finally:
+            # Reconnect the text changed signal
+            self.chart_input.textChanged.connect(self.on_text_changed)
     
     def get_selected_chart_ids(self):
         """Get list of valid chart IDs"""
@@ -757,62 +778,6 @@ class AnnotationTab(QWidget):
         }
 
 
-class ResultsTab(QWidget):
-    """Tab for showing results"""
-    
-    def __init__(self):
-        super().__init__()
-        self.init_ui()
-    
-    def init_ui(self):
-        layout = QVBoxLayout(self)
-        
-        # Results summary
-        self.summary_label = QLabel("No annotations applied yet")
-        self.summary_label.setStyleSheet("font-size: 14px; font-weight: bold;")
-        layout.addWidget(self.summary_label)
-        
-        # Results text
-        self.results_text = QTextEdit()
-        self.results_text.setReadOnly(True)
-        layout.addWidget(self.results_text)
-        
-        # Export button
-        self.export_btn = QPushButton("Export Results")
-        self.export_btn.clicked.connect(self.export_results)
-        self.export_btn.setEnabled(False)
-        layout.addWidget(self.export_btn)
-    
-    def set_results(self, results_text, summary):
-        """Set the results"""
-        self.summary_label.setText(summary)
-        self.results_text.setText(results_text)
-        self.export_btn.setEnabled(True)
-    
-    def export_results(self) -> None:
-        """Export results to file"""
-        filename, _ = QFileDialog.getSaveFileName(
-            self,
-            "Export Results",
-            "annotation_results.txt",
-            "Text Files (*.txt)"
-        )
-        if filename:
-            try:
-                with open(filename, 'w', encoding='utf-8') as f:
-                    f.write(self.results_text.toPlainText())
-                QMessageBox.information(self, "Success", "Results exported successfully!")
-                logger.info(f"Results exported to: {filename}")
-            except PermissionError:
-                QMessageBox.critical(self, "Permission Error", "Permission denied. Please choose a different location or check file permissions.")
-                logger.error(f"Permission denied writing to: {filename}")
-            except IOError as e:
-                QMessageBox.critical(self, "File Error", f"Failed to write file: {str(e)}")
-                logger.error(f"IO error writing to {filename}: {e}")
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to export: {str(e)}")
-                logger.exception(f"Unexpected error exporting to {filename}")
-
 
 class AmplitudeBulkAnnotator(QMainWindow):
     """Main application window"""
@@ -826,6 +791,9 @@ class AmplitudeBulkAnnotator(QMainWindow):
     def init_ui(self) -> None:
         self.setWindowTitle("Amplitude Bulk Annotation Maker")
         self.setGeometry(100, 100, 900, 700)
+        
+        # Create menu bar
+        self.create_menu_bar()
         
         # Central widget
         central_widget = QWidget()
@@ -850,17 +818,18 @@ class AmplitudeBulkAnnotator(QMainWindow):
         self.config_tab = ConfigTab()
         self.selection_tab = SelectionTab()
         self.annotation_tab = AnnotationTab()
-        self.results_tab = ResultsTab()
         
         # Add tabs
         self.tab_widget.addTab(self.config_tab, "1. Configuration")
         self.tab_widget.addTab(self.selection_tab, "2. Select Charts")
         self.tab_widget.addTab(self.annotation_tab, "3. Create Annotation")
-        self.tab_widget.addTab(self.results_tab, "4. Results")
         
         # Initially disable tabs except config
-        for i in range(1, 4):
+        for i in range(1, 3):
             self.tab_widget.setTabEnabled(i, False)
+        
+        # Connect to tab changes to update button text
+        self.tab_widget.currentChanged.connect(self.on_tab_changed)
         
         main_layout.addWidget(self.tab_widget)
         
@@ -868,8 +837,8 @@ class AmplitudeBulkAnnotator(QMainWindow):
         button_layout = QHBoxLayout()
         button_layout.addStretch()
         
-        self.apply_btn = QPushButton("Apply Annotations")
-        self.apply_btn.clicked.connect(self.apply_annotations)
+        self.apply_btn = QPushButton("Continue")
+        self.apply_btn.clicked.connect(self.on_main_button_clicked)
         self.apply_btn.setEnabled(False)
         self.apply_btn.setStyleSheet("QPushButton { padding: 10px 20px; }")
         button_layout.addWidget(self.apply_btn)
@@ -886,6 +855,45 @@ class AmplitudeBulkAnnotator(QMainWindow):
             # Visual feedback that config is being auto-completed
             QTimer.singleShot(100, self.show_auto_config_status)
     
+    def create_menu_bar(self) -> None:
+        """Create the application menu bar."""
+        menubar = self.menuBar()
+        
+        # File menu
+        file_menu = menubar.addMenu('&File')
+        
+        # Create .env template action
+        create_env_action = QAction('&Create .env Template File', self)
+        create_env_action.setStatusTip('Create a template .env file for easier credential management')
+        create_env_action.triggered.connect(self.create_env_template_from_menu)
+        file_menu.addAction(create_env_action)
+        
+        # Open .env file action (if it exists)
+        self.open_env_action = QAction('&Edit .env File', self)
+        self.open_env_action.setStatusTip('Edit the existing .env file')
+        self.open_env_action.triggered.connect(self.open_env_file_from_menu)
+        file_menu.addAction(self.open_env_action)
+        
+        # Update menu item availability based on .env file existence
+        self.update_menu_actions()
+    
+    def update_menu_actions(self) -> None:
+        """Update menu actions based on current state."""
+        env_exists = os.path.exists('.env')
+        self.open_env_action.setEnabled(env_exists)
+    
+    def create_env_template_from_menu(self) -> None:
+        """Create .env template file from menu action."""
+        if self.config_tab:
+            self.config_tab.create_env_template()
+            # Update menu after creating file
+            self.update_menu_actions()
+    
+    def open_env_file_from_menu(self) -> None:
+        """Open .env file from menu action."""
+        if self.config_tab:
+            self.config_tab.open_env_file()
+    
     def show_auto_config_status(self) -> None:
         """Show visual feedback for auto-configuration"""
         # Update window title temporarily
@@ -895,9 +903,58 @@ class AmplitudeBulkAnnotator(QMainWindow):
         # Restore original title after a brief moment
         QTimer.singleShot(2000, lambda: self.setWindowTitle(original_title))
     
+    def on_tab_changed(self, index: int) -> None:
+        """Handle tab changes to update the main button text."""
+        self.update_main_button()
+    
+    def update_main_button(self) -> None:
+        """Update the main button text and styling based on current tab and state."""
+        current_index = self.tab_widget.currentIndex()
+        
+        if current_index == 0:  # Configuration tab
+            self.apply_btn.setText("Continue")
+            # Check if config is valid to determine styling
+            is_enabled = self.apply_btn.isEnabled()
+            if is_enabled:
+                self.apply_btn.setStyleSheet("QPushButton { padding: 10px 20px; background-color: #4CAF50; color: white; font-weight: bold; }")
+            else:
+                self.apply_btn.setStyleSheet("QPushButton { padding: 10px 20px; }")
+        elif current_index == 1:  # Selection tab
+            self.apply_btn.setText("Continue")
+            # Check if selection is complete to determine styling
+            is_enabled = self.apply_btn.isEnabled()
+            if is_enabled:
+                self.apply_btn.setStyleSheet("QPushButton { padding: 10px 20px; background-color: #4CAF50; color: white; font-weight: bold; }")
+            else:
+                self.apply_btn.setStyleSheet("QPushButton { padding: 10px 20px; }")
+        elif current_index == 2:  # Annotation tab
+            self.apply_btn.setText("Apply Annotations")
+            # Check if annotation is ready to determine styling
+            is_enabled = self.apply_btn.isEnabled()
+            if is_enabled:
+                self.apply_btn.setStyleSheet("QPushButton { padding: 10px 20px; background-color: #4CAF50; color: white; font-weight: bold; }")
+            else:
+                self.apply_btn.setStyleSheet("QPushButton { padding: 10px 20px; }")
+    
+    def on_main_button_clicked(self) -> None:
+        """Handle the main button click based on the current tab."""
+        current_index = self.tab_widget.currentIndex()
+        
+        if current_index == 0:  # Configuration tab - continue to step 2
+            if self.tab_widget.isTabEnabled(1):
+                self.tab_widget.setCurrentIndex(1)
+        elif current_index == 1:  # Selection tab - continue to step 3
+            if self.tab_widget.isTabEnabled(2):
+                self.tab_widget.setCurrentIndex(2)
+        elif current_index == 2:  # Annotation tab - apply annotations
+            self.apply_annotations()
+    
     def on_config_valid(self, valid: bool) -> None:
         """Handle configuration validation"""
         self.tab_widget.setTabEnabled(1, valid)
+        self.apply_btn.setEnabled(valid)
+        self.update_main_button()
+        
         if valid:
             # Pass API client to selection tab
             self.api_client = self.config_tab.get_api_client()
@@ -911,13 +968,21 @@ class AmplitudeBulkAnnotator(QMainWindow):
     def on_selection_complete(self, has_selection: bool) -> None:
         """Handle selection completion"""
         self.tab_widget.setTabEnabled(2, has_selection)
+        current_index = self.tab_widget.currentIndex()
+        if current_index == 1:  # Only enable button if we're on the selection tab
+            self.apply_btn.setEnabled(has_selection)
+        self.update_main_button()
+        
         if has_selection:
             # Auto-progress to next tab
             QTimer.singleShot(100, lambda: self.tab_widget.setCurrentIndex(2))
     
     def on_annotation_ready(self, ready: bool) -> None:
         """Handle annotation readiness"""
-        self.apply_btn.setEnabled(ready and self.tab_widget.isTabEnabled(2))
+        current_index = self.tab_widget.currentIndex()
+        if current_index == 2:  # Only enable button if we're on the annotation tab
+            self.apply_btn.setEnabled(ready and self.tab_widget.isTabEnabled(2))
+        self.update_main_button()
     
     def apply_annotations(self) -> None:
         """Apply annotations to selected charts"""
@@ -982,24 +1047,50 @@ class AmplitudeBulkAnnotator(QMainWindow):
             self.worker.deleteLater()
             self.worker = None
         
-        # Show results
-        self.tab_widget.setTabEnabled(3, True)
-        self.tab_widget.setCurrentIndex(3)
-        
-        # Update results tab
-        results_text = f"Annotation Results\n{'='*50}\n\n"
-        results_text += f"Status: {'Success' if success else 'Partial Success'}\n"
-        results_text += f"Summary: {message}\n\n"
-        results_text += "Details:\n"
-        results_text += "- Check Amplitude for the applied annotations\n"
-        
-        self.results_tab.set_results(results_text, message)
-        
-        # Show message box
+        # Show success/completion popup with custom buttons
         if success:
-            QMessageBox.information(self, "Success", "All annotations applied successfully!")
+            self.show_completion_dialog(
+                "Success! ✅",
+                f"{message}\n\nYour annotations have been applied to the selected charts. "
+                f"You can view them in Amplitude."
+            )
         else:
-            QMessageBox.warning(self, "Partial Success", message)
+            self.show_completion_dialog(
+                "Partial Success ⚠️",
+                f"{message}\n\nSome annotations may have failed. "
+                f"Please check your charts in Amplitude and retry if needed."
+            )
+    
+    def show_completion_dialog(self, title: str, message: str) -> None:
+        """Show completion dialog with custom action buttons."""
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle(title)
+        dialog.setText(message)
+        dialog.setIcon(QMessageBox.Icon.Information)
+        
+        # Create custom buttons
+        create_another_btn = dialog.addButton("Create Another Annotation", QMessageBox.ButtonRole.AcceptRole)
+        new_charts_btn = dialog.addButton("Enter New Charts", QMessageBox.ButtonRole.ActionRole)
+        close_app_btn = dialog.addButton("Close App", QMessageBox.ButtonRole.RejectRole)
+        
+        # Set the primary/default button (highlighted)
+        dialog.setDefaultButton(create_another_btn)
+        
+        # Show dialog and handle response
+        dialog.exec()
+        clicked_button = dialog.clickedButton()
+        
+        if clicked_button == create_another_btn:
+            # Create another annotation - just stay in current tab (Step 3)
+            # Reset the apply button to be ready for next annotation
+            self.update_main_button()
+        elif clicked_button == new_charts_btn:
+            # Enter new charts - return to Step 2
+            self.tab_widget.setCurrentIndex(1)
+            # Button state will be updated by tab change and selection state
+        elif clicked_button == close_app_btn:
+            # Close app
+            self.close()
 
 
 def main() -> None:

@@ -1,158 +1,351 @@
 # Amplitude Bulk Annotation Maker
 
-A Python GUI application for applying annotations to multiple Amplitude charts at once. Built with Python 3.13 and PySide6.
+A Python GUI application for efficiently applying annotations to multiple Amplitude charts simultaneously. Built with Python 3.9+ and PySide6, following modern security and usability best practices.
+
+## Table of Contents
+
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Usage Guide](#usage-guide)
+- [Security](#security)
+- [Distribution](#distribution)
+- [Troubleshooting](#troubleshooting)
+- [Technical Details](#technical-details)
 
 ## Features
 
-- **Bulk Annotations**: Apply the same annotation to multiple charts at once
-- **Chart ID & URL Input**: Enter chart IDs directly or paste full Amplitude URLs
-- **URL Parsing**: Automatically extracts chart IDs from Amplitude URLs
-- **Input Validation**: Validates chart IDs before processing
-- **Automatic Tab Progression**: Seamlessly move through the workflow
-- **Configuration Saving**: Save your API keys and project settings for future use
-- **Modern GUI**: Clean, intuitive interface built with PySide6
+- **🔄 Bulk Operations**: Apply identical annotations to multiple charts in one operation
+- **🔗 Flexible Input**: Accept chart IDs directly or extract from full Amplitude URLs
+- **✅ Smart Validation**: Real-time validation of chart IDs and URLs with visual feedback
+- **🔐 Secure Configuration**: Environment variable support with `.env` file integration
+- **🎯 Guided Workflow**: Step-by-step interface with automatic progression
+- **💾 Preference Storage**: Save non-sensitive settings for future sessions
+- **🔄 Auto-Configuration**: Seamless setup when environment variables are detected
+- **🎨 Modern Interface**: Clean, intuitive GUI built with PySide6
+
+## Quick Start
+
+For users who want to get started immediately:
+
+### Windows
+```bash
+# Download and extract the application files
+# Install Python 3.9+ if not already installed
+run.bat
+```
+
+### macOS/Linux
+```bash
+# Download and extract the application files
+chmod +x run.sh
+./run.sh
+```
+
+The launch scripts automatically handle dependency installation and environment setup.
 
 ## Installation
 
-### Requirements
-- Python 3.13 or later
-- pip (Python package manager)
+### Prerequisites
 
-### Setup
+- **Python 3.9+** (recommended: latest stable version)
+- **PySide6 6.5.0+** (Qt 6 GUI framework)
+- **Valid Amplitude account** with API credentials
+
+### Why Python 3.9+?
+
+This application uses modern Python features including:
+- PEP 585 generic types (`list[str]` syntax)
+- Advanced typing annotations with `Final`
+- PySide6 which requires Python 3.9+
+
+### Method 1: Automated Setup (Recommended)
 
 1. **Download the application**
-   - Download all files to a folder on your computer
+   ```bash
+   # Extract all files to a folder of your choice
+   cd amplitude-bulk-annotation-maker
+   ```
 
-2. **Install dependencies**
+2. **Run the launch script**
+   - **Windows**: Double-click `run.bat` or run in terminal
+   - **macOS/Linux**: Run `./run.sh` in terminal
+
+   The script automatically:
+   - Creates a virtual environment
+   - Installs all dependencies
+   - Launches the application
+
+### Method 2: Manual Setup
+
+1. **Clone or download the repository**
+   ```bash
+   git clone <repository-url>
+   cd amplitude-bulk-annotation-maker
+   ```
+
+2. **(Optional) Create virtual environment**
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate  # macOS/Linux
+   # or
+   venv\Scripts\activate     # Windows
+   ```
+
+3. **Install dependencies**
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Run the application**
-   
-   **Windows:**
+4. **Launch application**
    ```bash
-   run.bat
-   ```
-   
-   **Mac/Linux:**
-   ```bash
-   ./run.sh
+   python3 amplitude_bulk_annotator.py
    ```
 
-## How to Use
+### Dependencies
 
-### 1. Configuration
+The application uses these key libraries:
+- `PySide6` - Modern Qt-based GUI framework
+- `requests` - HTTP client for Amplitude API
+- `python-dotenv` - Environment variable management
+- `python-dateutil` - Date handling utilities
 
-**🔒 Recommended: Use Environment Variables** (see [SETUP_ENVIRONMENT.md](SETUP_ENVIRONMENT.md))
-- Create a `.env` file with your credentials - the app loads it automatically
-- Or set `AMPLITUDE_API_KEY`, `AMPLITUDE_SECRET_KEY`, `AMPLITUDE_PROJECT_ID` environment variables
-- Application will automatically detect and use these securely
+## Configuration
 
-**Alternative: Manual Entry**
-- Enter your Amplitude API Key and Secret Key
-- Select your region (US or EU)  
-- Enter your Project ID (found in Amplitude Settings > Projects)
-- Test the connection
+The application supports multiple configuration methods, prioritizing security:
 
-### 2. Select Charts
-Enter chart IDs or URLs in the text area. You can:
-- **Enter chart IDs directly**: `ez25o7zy`
-- **Paste full URLs**: `https://app.amplitude.com/analytics/demo/chart/ez25o7zy`
-- **Mix both formats**
-- **Enter multiple charts** (one per line)
+### 🔒 Recommended: Environment Variables
 
-Examples:
+**Option A: `.env` File (Easiest)**
+1. Launch the application
+2. Go to **File** → **Create .env Template File**
+3. Edit the created `.env` file with your credentials:
+   ```env
+   AMPLITUDE_API_KEY=your_actual_api_key
+   AMPLITUDE_SECRET_KEY=your_actual_secret_key
+   AMPLITUDE_PROJECT_ID=123456
+   AMPLITUDE_REGION=US
+   ```
+4. Restart the application - credentials load automatically
+
+**Option B: System Environment Variables**
+```bash
+# Add to your shell profile (.bashrc, .zshrc, etc.)
+export AMPLITUDE_API_KEY="your_api_key"
+export AMPLITUDE_SECRET_KEY="your_secret_key"
+export AMPLITUDE_PROJECT_ID="123456"
+export AMPLITUDE_REGION="US"  # Optional: US or EU
 ```
-ez25o7zy
-abc123
-https://app.amplitude.com/analytics/demo/chart/xyz789
-def456, ghi789
-```
 
-Click "Parse and Validate" to process your input.
+### 📝 Alternative: Manual Entry
 
-### 3. Create Annotation
-- Select the affected date
-- Enter annotation name (required)
-- Add optional description
-- Preview your annotation
-
-### 4. Apply & Review
-- Click "Apply Annotations" to process all charts
-- View results in the Results tab
-- Export results if needed
-
-## Security & API Keys
-
-### 🔒 Security Best Practices
-
-This application follows security best practices by using **environment variables** for sensitive credentials instead of storing them in files.
-
-**See [SETUP_ENVIRONMENT.md](SETUP_ENVIRONMENT.md) for detailed setup instructions.**
+If no environment variables are detected, the application provides a clean form for manual credential entry.
 
 ### Getting Your Amplitude Credentials
 
-1. **API Keys**: Go to Amplitude Settings → Projects → API Keys
-2. **Project ID**: Go to Amplitude Settings → Projects (numeric ID)
-3. **Region**: Usually "US" unless you specifically use EU servers
+1. **API Keys**:
+   - Log into Amplitude
+   - Settings → Projects → [Your Project] → API Keys
+   - Copy API Key and Secret Key
 
-**Important**: Never commit API keys to version control or share them in plain text!
+2. **Project ID**:
+   - Settings → Projects
+   - Note the numeric Project ID
 
-## Getting Chart IDs
+3. **Region**: 
+   - Usually "US" unless you specifically use EU servers
 
-### From Chart URLs
-Chart IDs are at the end of Amplitude chart URLs:
+## Usage Guide
+
+### Step 1: Configuration
+- **With environment variables**: Credentials load automatically with secure display
+- **Manual entry**: Enter credentials and test connection
+- The interface adapts based on your setup method
+
+### Step 2: Select Charts
+
+Enter chart information in any of these formats:
+
+**Chart IDs**:
 ```
-https://app.amplitude.com/analytics/yourproject/chart/ez25o7zy
-                                                       ^^^^^^^^
-                                                     Chart ID
+ez25o7zy
+abc123def
+xyz789
 ```
 
-### From Multiple Charts
-1. Open each chart in Amplitude
-2. Copy the URL or just the chart ID from the URL
-3. Paste all IDs/URLs into the application (one per line)
+**Full URLs**:
+```
+https://app.amplitude.com/analytics/demo/chart/ez25o7zy
+https://app.amplitude.com/analytics/yourproject/chart/abc123def
+```
+
+**Mixed formats** (one per line):
+```
+ez25o7zy
+https://app.amplitude.com/analytics/demo/chart/abc123def
+xyz789, def456
+```
+
+**Real-time validation** provides immediate feedback:
+- ✅ Valid chart IDs/URLs
+- ❌ Invalid or malformed entries
+
+### Step 3: Create Annotation
+
+1. **Select date**: Choose the date for your annotation
+2. **Enter name**: Provide a descriptive annotation title (required)
+3. **Add description**: Optional detailed description
+4. **Preview**: Review your annotation before applying
+5. **Apply**: Process all selected charts
+
+### Results
+
+The application provides detailed feedback:
+- Progress bar during processing
+- Success/failure status for each chart
+- Options to create additional annotations or select new charts
+
+## Security
+
+### 🔒 Security Best Practices
+
+This application follows enterprise-grade security practices:
+
+- **Environment Variables**: Sensitive credentials never stored in files
+- **Masked Display**: API keys shown as `••••••••` in the interface
+- **Read-only Fields**: Environment-loaded credentials cannot be accidentally modified
+- **No Plain Text**: Manual entries are never saved to disk
+- **Secure Transmission**: HTTPS-only API communication
+
+### Important Security Notes
+
+- **Never commit** `.env` files to version control (automatically ignored)
+- **Never share** API keys in plain text or screenshots
+- **Use environment variables** for production environments
+- **Each user** needs their own Amplitude API credentials
 
 ## Distribution
 
-To package for colleagues:
+### Sharing with Colleagues
+
 ```bash
-python package_for_distribution.py
+python3 package_for_distribution.py
 ```
 
-This creates a zip file with all necessary files that can be shared with colleagues.
+This creates a timestamped ZIP file with all necessary files:
+- Application source code
+- Dependencies list
+- Documentation
+- Launch scripts
+- Setup instructions
 
-**Important**: Each user needs their own Amplitude API keys!
+**Important**: Recipients need their own Amplitude API keys.
+
+### What's Included
+
+- Complete application files
+- Installation scripts for all platforms
+- Comprehensive documentation
+- Environment setup templates
 
 ## Troubleshooting
 
 ### Connection Issues
-- Verify your API keys are correct
-- Check if your region (US/EU) is correct
-- Ensure your Project ID is a number
+
+**Symptoms**: "Connection failed" or authentication errors
+- ✅ Verify API keys are correct (copy-paste from Amplitude)
+- ✅ Confirm region setting (US vs EU)
+- ✅ Ensure Project ID is numeric
+- ✅ Check API key permissions include annotation access
 
 ### Chart ID Issues
-- Make sure chart IDs are alphanumeric (may include dashes/underscores)
-- Verify URLs contain `/chart/` in the path
-- Check that chart IDs are at least 3 characters long
 
-### Permission Issues
-- Ensure your API keys have annotation permissions
-- Verify you have access to the specified project
+**Symptoms**: "Invalid chart ID" or validation failures
+- ✅ Chart IDs are alphanumeric (may include dashes/underscores)
+- ✅ URLs contain `/chart/` in the path
+- ✅ Chart IDs are at least 3 characters long
+- ✅ Remove extra spaces or characters
+
+### Environment Variable Issues
+
+**Symptoms**: Manual entry form appears despite setting variables
+- ✅ Restart terminal/application after setting variables
+- ✅ Check variable names (case-sensitive):
+  - `AMPLITUDE_API_KEY`
+  - `AMPLITUDE_SECRET_KEY`
+  - `AMPLITUDE_PROJECT_ID`
+  - `AMPLITUDE_REGION`
+- ✅ Verify variables are set: `echo $AMPLITUDE_API_KEY`
+- ✅ Try using `.env` file method instead
+
+### Python Issues
+
+**Windows**: "python: command not found"
+- Install Python from [python.org](https://python.org)
+- Check "Add to PATH" during installation
+- Use `run.bat` script for automatic setup
+
+**macOS/Linux**: Version compatibility
+- Use `python3` instead of `python`
+- Install Python 3.9+ if needed
+- Use `run.sh` script for automatic setup
+
+### Application Issues
+
+**GUI doesn't appear**:
+- Check Python version: `python3 --version`
+- Install missing dependencies: `pip install -r requirements.txt`
+- Check logs: `amplitude_bulk_annotator.log`
+
+**Slow performance**:
+- Limit chart selections to reasonable numbers (< 100 at once)
+- Check internet connection stability
+- Verify Amplitude service status
 
 ## Technical Details
 
-- **API Documentation**: Uses Amplitude Chart Annotations API
+### Architecture
 - **GUI Framework**: PySide6 (Qt for Python)
-- **Supported Platforms**: Windows, macOS, Linux
-- **Python Version**: 3.13+ recommended
+- **API Client**: Custom implementation with retry logic
+- **Threading**: Non-blocking UI with worker threads
+- **Configuration**: Environment-first with file fallback
+- **Validation**: Real-time input validation with visual feedback
 
-## Files
+### API Integration
+- **Endpoint**: Amplitude Chart Annotations API
+- **Authentication**: HTTP Basic Authentication
+- **Rate Limiting**: Built-in retry logic with exponential backoff
+- **Error Handling**: Comprehensive error reporting and recovery
 
-- `amplitude_bulk_annotator.py` - Main GUI application
-- `amplitude_api.py` - Amplitude API client
-- `requirements.txt` - Python dependencies
-- `run.bat` / `run.sh` - Launch scripts
-- `package_for_distribution.py` - Distribution packager
-- `SETUP_ENVIRONMENT.md` - Environment variables setup guide 
+### Supported Platforms
+- **Windows** 10/11
+- **macOS** 10.14+
+- **Linux** distributions with Python 3.8+
+
+### File Structure
+```
+amplitude-bulk-annotation-maker/
+├── amplitude_bulk_annotator.py  # Main application
+├── amplitude_api.py             # API client
+├── config_manager.py           # Configuration handling
+├── constants.py                # Application constants
+├── requirements.txt            # Python dependencies
+├── run.bat                     # Windows launcher
+├── run.sh                      # macOS/Linux launcher
+├── package_for_distribution.py # Distribution packager
+├── utils/
+│   └── validators.py           # Input validation utilities
+├── README.md                   # This file
+└── SETUP_ENVIRONMENT.md        # Environment setup guide
+```
+
+### Contributing
+
+This application is designed for enterprise use with a focus on:
+- Security best practices
+- User experience optimization
+- Error handling and recovery
+- Cross-platform compatibility
+
+For technical questions or feature requests, refer to the application logs and error messages for detailed debugging information. 

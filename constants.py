@@ -57,7 +57,6 @@ STATUS_DISPLAY_DURATION: Final[int] = 2000
 TAB_CONFIG: Final[int] = 0
 TAB_SELECTION: Final[int] = 1
 TAB_ANNOTATION: Final[int] = 2
-TAB_RESULTS: Final[int] = 3
 
 # Files to include in distribution
 DISTRIBUTION_FILES: Final[list[str]] = [

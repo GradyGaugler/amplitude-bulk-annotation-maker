@@ -72,7 +72,7 @@ To share this application:
 
 1. Send the ZIP file to your colleagues
 2. They should extract all files to a folder
-3. They need Python 3.13+ installed
+3. They need Python 3.9+ installed
 4. Run the application:
    - Windows: Double-click run.bat
    - Mac/Linux: Run ./run.sh
