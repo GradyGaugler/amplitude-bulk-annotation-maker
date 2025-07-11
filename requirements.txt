@@ -7,4 +7,6 @@ python-dateutil>=2.8.2
 # Environment variable loading (.env files)
 python-dotenv>=1.0.0
 # Type hints for Python 3.8+ compatibility
-typing-extensions>=4.7.0 
+typing-extensions>=4.7.0
+# HTTP retry utilities (included with requests)
+urllib3>=1.26.0 

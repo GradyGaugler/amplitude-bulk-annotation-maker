@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """
 Amplitude API Client for bulk annotation operations.
@@ -290,6 +291,118 @@ class AmplitudeAPIClient:
         
         success_count = sum(1 for _, success, _ in results if success)
         logger.info(f"Bulk annotation completed: {success_count}/{total} successful")
+        
+        return results
+    
+    def validate_chart_existence(
+        self,
+        project_id: int,
+        chart_id: str
+    ) -> Tuple[bool, str]:
+        """
+        Validate if a chart exists by attempting to create a test annotation.
+        
+        This method attempts to create an annotation with a future date to test
+        if the chart ID is valid without actually creating a permanent annotation.
+        
+        Args:
+            project_id: Amplitude project ID
+            chart_id: Chart ID to validate
+            
+        Returns:
+            Tuple of (exists: bool, message: str)
+        """
+        from datetime import date, timedelta
+        
+        # Use a future date for testing (won't create a visible annotation)
+        test_date = date.today() + timedelta(days=365)
+        
+        params: Dict[str, Any] = {
+            "app_id": project_id,
+            "date": test_date.strftime("%Y-%m-%d"),
+            "label": "VALIDATION_TEST_DO_NOT_USE",
+            "chart_id": chart_id
+        }
+        
+        try:
+            response = self.session.post(
+                urljoin(self.base_url, API_ANNOTATIONS_ENDPOINT),
+                params=params,
+                timeout=self.timeout
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('success'):
+                    logger.debug(f"Chart {chart_id} exists and is accessible")
+                    return True, "Chart exists"
+                else:
+                    # API returned success=false, likely invalid chart ID
+                    logger.debug(f"Chart {chart_id} validation failed: {result}")
+                    return False, "Chart not found or not accessible"
+            elif response.status_code == 401:
+                raise AmplitudeAuthenticationError("Authentication failed")
+            elif response.status_code == 400:
+                # Bad request usually means invalid chart ID
+                logger.debug(f"Chart {chart_id} validation failed: Bad request")
+                return False, "Invalid chart ID"
+            else:
+                logger.warning(f"Unexpected response validating chart {chart_id}: {response.status_code}")
+                return False, f"Validation error: HTTP {response.status_code}"
+                
+        except requests.exceptions.Timeout:
+            logger.error("Request timeout during chart validation")
+            return False, "Validation timeout"
+        except requests.exceptions.ConnectionError:
+            logger.error("Connection error during chart validation")
+            return False, "Connection error"
+        except AmplitudeAPIError:
+            raise
+        except Exception as e:
+            logger.exception(f"Unexpected error validating chart {chart_id}")
+            return False, f"Validation error: {str(e)}"
+
+    def bulk_validate_charts(
+        self,
+        project_id: int,
+        chart_ids: List[str],
+        progress_callback: Optional[Callable[[int, int], None]] = None
+    ) -> List[Tuple[str, bool, str]]:
+        """
+        Validate multiple charts for existence.
+        
+        Args:
+            project_id: Amplitude project ID
+            chart_ids: List of chart IDs to validate
+            progress_callback: Optional callback for progress updates (current, total)
+            
+        Returns:
+            List of tuples (chart_id, exists, message) for each chart
+        """
+        results: List[Tuple[str, bool, str]] = []
+        total = len(chart_ids)
+        
+        logger.info(f"Starting bulk chart validation for {total} charts")
+        
+        for i, chart_id in enumerate(chart_ids):
+            try:
+                exists, message = self.validate_chart_existence(project_id, chart_id)
+                results.append((chart_id, exists, message))
+                
+                if progress_callback:
+                    progress_callback(i + 1, total)
+                    
+            except AmplitudeAuthenticationError:
+                # Stop on authentication error
+                logger.error("Authentication error - stopping bulk validation")
+                results.append((chart_id, False, "Authentication failed"))
+                break
+            except Exception as e:
+                logger.exception(f"Error validating chart {chart_id}")
+                results.append((chart_id, False, str(e)))
+        
+        valid_count = sum(1 for _, exists, _ in results if exists)
+        logger.info(f"Bulk chart validation completed: {valid_count}/{total} valid")
         
         return results
     

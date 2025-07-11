@@ -38,12 +38,12 @@ The application requires **Python 3.9+** and these environment variables for Amp
 1. Log into your Amplitude account
 2. Navigate to **Settings** → **Projects**
 3. Select your project
-4. Go to **General** → **API Keys**
+4. Go to **API Keys** (not General → API Keys)
 5. Copy your **API Key** and **Secret Key**
 
 #### 2. Project ID
 1. In Amplitude, go to **Settings** → **Projects**
-2. Your Project ID is the numeric identifier displayed
+2. Your Project ID is the numeric identifier displayed next to your project name
 
 #### 3. Region
 - **US**: Default for most users (app.amplitude.com)
@@ -69,7 +69,7 @@ Choose the method that best fits your workflow:
    - This creates a `.env` file with placeholder values
 
 3. **Edit with your credentials**
-   - Use **File** → **Edit .env File** to open in your default editor
+   - Use the **Edit .env File** button in the Configuration tab
    - Or manually edit with any text editor:
 
    ```env
@@ -185,12 +185,12 @@ When you launch the application, you'll see different interfaces based on your c
 
 #### ✅ Environment Variables Detected
 - **Status**: Green message: "🔒 Configuration loaded from .env file" or "🔒 Configuration loaded from system environment variables"
-- **Fields**: Credential fields show `••••••••` and are read-only
+- **Fields**: Credential fields show `••••••••••••••••` and are read-only
 - **Behavior**: Automatic connection test on startup
-- **Menu**: .env file management options available if using `.env` method
+- **Interface**: Edit .env File button available if using `.env` method
 
 #### ❌ No Environment Variables
-- **Status**: Blue message: "💡 Enter your Amplitude credentials below"
+- **Status**: Blue message prompting for manual credential entry
 - **Fields**: Empty, editable credential input fields
 - **Behavior**: Manual entry required, manual connection test
 
@@ -302,8 +302,8 @@ amplitude_preferences.json
 **Symptoms**: Variables from `.env` file not loaded
 
 **Solutions**:
-1. **Check file location**: Must be in same directory as application
-2. **Check file name**: Must be exactly `.env` (with the dot)
+1. **Check file location**: Must be in same directory as `amplitude_bulk_annotator.py`
+2. **Check file name**: Must be exactly `.env` (with the dot, no extension)
 3. **Check file format**:
    ```env
    # Correct format
@@ -322,13 +322,15 @@ amplitude_preferences.json
    chmod 600 .env
    ```
 
+5. **Use the Edit .env File button** in the application for easy editing
+
 ### Connection Still Fails
 
 **After environment variables are correctly set**:
 
 1. **Verify credentials in Amplitude**:
    - API keys are active and not expired
-   - Project ID is correct
+   - Project ID is correct (numeric value)
    - Account has annotation permissions
 
 2. **Check region setting**:
@@ -337,7 +339,11 @@ amplitude_preferences.json
 
 3. **Test with manual entry**:
    - Temporarily enter credentials manually
-   - Use "Test Connection" to verify
+   - Use "Test Connection and Save" to verify
+
+4. **Check for detailed error messages**:
+   - The application provides specific error explanations
+   - Look for HTTP status codes and their meanings
 
 ### Python/Application Issues
 
@@ -369,7 +375,8 @@ If you continue to experience issues:
 1. **Check application logs**: `amplitude_bulk_annotator.log`
 2. **Verify Amplitude service status**: Check Amplitude's status page
 3. **Test with minimal configuration**: Use only required variables
-4. **Contact support**: Provide sanitized error messages (never include API keys)
+4. **Platform Requirements**: Ensure you have Python 3.9+ installed
+5. **Contact support**: Provide sanitized error messages (never include API keys)
 
 ## Advanced Configuration
 

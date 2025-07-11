@@ -20,10 +20,13 @@ A Python GUI application for efficiently applying annotations to multiple Amplit
 - **🔗 Flexible Input**: Accept chart IDs directly or extract from full Amplitude URLs
 - **✅ Smart Validation**: Real-time validation of chart IDs and URLs with visual feedback
 - **🔐 Secure Configuration**: Environment variable support with `.env` file integration
-- **🎯 Guided Workflow**: Step-by-step interface with automatic progression
+- **🎯 Guided Workflow**: Step-by-step interface with manual progression control
 - **💾 Preference Storage**: Save non-sensitive settings for future sessions
 - **🔄 Auto-Configuration**: Seamless setup when environment variables are detected
 - **🎨 Modern Interface**: Clean, intuitive GUI built with PySide6
+- **📊 Chart Validation**: API-based validation to ensure charts exist before annotation
+- **🔄 Retry Logic**: Built-in retry mechanism with exponential backoff for reliability
+- **📝 .env File Management**: Built-in tools to create and edit environment files
 
 ## Quick Start
 
@@ -106,10 +109,14 @@ This application uses modern Python features including:
 ### Dependencies
 
 The application uses these key libraries:
-- `PySide6` - Modern Qt-based GUI framework
-- `requests` - HTTP client for Amplitude API
-- `python-dotenv` - Environment variable management
-- `python-dateutil` - Date handling utilities
+- `PySide6` - Modern Qt-based GUI framework (6.5.0+)
+- `requests` - HTTP client for Amplitude API (2.31.0+)
+- `python-dotenv` - Environment variable management (1.0.0+)
+- `python-dateutil` - Date handling utilities (2.8.2+)
+- `typing-extensions` - Type hints for Python compatibility (4.7.0+)
+- `urllib3` - HTTP retry utilities (1.26.0+, included with requests)
+
+All dependencies are automatically installed when using the launch scripts (`run.bat` or `run.sh`).
 
 ## Configuration
 
@@ -128,6 +135,12 @@ The application supports multiple configuration methods, prioritizing security:
    AMPLITUDE_REGION=US
    ```
 4. Restart the application - credentials load automatically
+
+**Built-in .env File Tools**:
+- **Create Template**: Menu option to create a `.env` file with placeholders
+- **Edit Button**: Direct access to edit the `.env` file from the Configuration tab
+- **Auto-Detection**: Application automatically detects and loads `.env` files
+- **Validation**: Clear status messages when `.env` files are invalid or missing values
 
 **Option B: System Environment Variables**
 ```bash
@@ -187,24 +200,36 @@ https://app.amplitude.com/analytics/demo/chart/abc123def
 xyz789, def456
 ```
 
-**Real-time validation** provides immediate feedback:
-- ✅ Valid chart IDs/URLs
-- ❌ Invalid or malformed entries
+**Real-time validation** provides immediate feedback with visual indicators:
+- ⏳ Charts being validated with Amplitude API
+- ✅ Valid chart IDs confirmed to exist
+- ❌ Invalid or non-existent charts
+
+The application validates both format and existence using the Amplitude API to ensure annotations will be successfully applied.
 
 ### Step 3: Create Annotation
 
 1. **Select date**: Choose the date for your annotation
 2. **Enter name**: Provide a descriptive annotation title (required)
 3. **Add description**: Optional detailed description
-4. **Preview**: Review your annotation before applying
-5. **Apply**: Process all selected charts
+4. **Apply**: Process all selected charts with progress tracking
 
 ### Results
 
 The application provides detailed feedback:
 - Progress bar during processing
 - Success/failure status for each chart
-- Options to create additional annotations or select new charts
+- Completion dialog with options to:
+  - Create another annotation (same charts)
+  - Enter new charts
+  - Close the application
+
+### Workflow Features
+
+**Manual Progression**: Users control when to move between steps using the "Continue" button
+**Smart Validation**: Each step validates input before allowing progression
+**Flexible Restart**: After completion, users can easily restart from any step
+**Progress Persistence**: Chart selections and configuration remain available for creating multiple annotations
 
 ## Security
 
@@ -303,6 +328,32 @@ This creates a timestamped ZIP file with all necessary files:
 - Check internet connection stability
 - Verify Amplitude service status
 
+**Unexpected errors**:
+- Check the log file `amplitude_bulk_annotator.log` for detailed error information
+- Look for specific error messages and stack traces
+- Common issues include network connectivity, API rate limits, and invalid credentials
+
+### Log File Analysis
+
+The application creates a detailed log file `amplitude_bulk_annotator.log` in the same directory. This file contains:
+
+- **Connection attempts**: API connection tests and results
+- **Validation results**: Chart ID validation and API responses
+- **Error details**: Full error messages and stack traces
+- **Performance metrics**: Request timing and success rates
+
+**Reading the log file**:
+```bash
+# View recent log entries
+tail -50 amplitude_bulk_annotator.log
+
+# Search for specific errors
+grep -i "error" amplitude_bulk_annotator.log
+
+# View connection attempts
+grep -i "connection" amplitude_bulk_annotator.log
+```
+
 ## Technical Details
 
 ### Architecture
@@ -311,17 +362,27 @@ This creates a timestamped ZIP file with all necessary files:
 - **Threading**: Non-blocking UI with worker threads
 - **Configuration**: Environment-first with file fallback
 - **Validation**: Real-time input validation with visual feedback
+- **Error Handling**: Comprehensive error reporting with user-friendly explanations
+- **Logging**: Detailed logging to file and console for debugging
 
 ### API Integration
 - **Endpoint**: Amplitude Chart Annotations API
 - **Authentication**: HTTP Basic Authentication
 - **Rate Limiting**: Built-in retry logic with exponential backoff
 - **Error Handling**: Comprehensive error reporting and recovery
+- **Status Codes**: Detailed HTTP status code explanations for users
+
+### Error Handling Features
+- **Smart Error Messages**: Automatic translation of API errors to user-friendly explanations
+- **Status Indicators**: Visual feedback with color-coded status bars across all tabs
+- **Progress Tracking**: Real-time progress updates during bulk operations
+- **Graceful Degradation**: Partial success handling for bulk operations
+- **Logging**: Comprehensive logging to `amplitude_bulk_annotator.log` for troubleshooting
 
 ### Supported Platforms
 - **Windows** 10/11
 - **macOS** 10.14+
-- **Linux** distributions with Python 3.8+
+- **Linux** distributions with Python 3.9+
 
 ### File Structure
 ```
@@ -335,6 +396,7 @@ amplitude-bulk-annotation-maker/
 ├── run.sh                      # macOS/Linux launcher
 ├── package_for_distribution.py # Distribution packager
 ├── utils/
+│   ├── __init__.py             # Utility module init
 │   └── validators.py           # Input validation utilities
 ├── README.md                   # This file
 └── SETUP_ENVIRONMENT.md        # Environment setup guide

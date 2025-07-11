@@ -62,11 +62,15 @@ TAB_ANNOTATION: Final[int] = 2
 DISTRIBUTION_FILES: Final[list[str]] = [
     'amplitude_bulk_annotator.py',
     'amplitude_api.py',
+    'config_manager.py',
+    'constants.py',
     'requirements.txt',
     'README.md',
+    'SETUP_ENVIRONMENT.md',
     'run.bat',
     'run.sh',
-    '.gitignore',
-    'SETUP_ENVIRONMENT.md',
-    'constants.py'
+    'package_for_distribution.py',
+    'utils/__init__.py',
+    'utils/validators.py',
+    '.gitignore'
 ] 
