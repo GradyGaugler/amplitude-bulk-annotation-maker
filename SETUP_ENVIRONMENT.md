@@ -261,7 +261,6 @@ Ensure your `.gitignore` file includes:
 
 # Configuration files
 amplitude_config.json
-amplitude_preferences.json
 ```
 
 ## Troubleshooting

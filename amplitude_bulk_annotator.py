@@ -35,7 +35,7 @@ except ImportError:
 from amplitude_api import AmplitudeAPIClient, AmplitudeAPIError
 from constants import (
     ENV_API_KEY, ENV_SECRET_KEY, ENV_PROJECT_ID, ENV_REGION,
-    CONFIG_FILE, DEFAULT_REGION, VALID_REGIONS,
+    DEFAULT_REGION, VALID_REGIONS,
     STATUS_TEXT_MAX_HEIGHT, DESCRIPTION_MAX_HEIGHT,
     CHART_INPUT_MIN_HEIGHT, RESULTS_TEXT_MAX_HEIGHT,
     MASKED_CREDENTIAL_DISPLAY,
@@ -245,7 +245,7 @@ class ConfigTab(QWidget):
     
     def load_config(self) -> None:
         """
-        Load configuration from environment variables first, then file for preferences.
+        Load configuration from environment variables.
         
         Prioritizes environment variables for security. Falls back to manual input
         if environment variables are not found.
@@ -484,46 +484,8 @@ class ConfigTab(QWidget):
         self.secret_key_input.setEnabled(True)
         self.project_id_input.setEnabled(True)
         self.region_combo.setEnabled(True)
-        
-        # Load preferences from file (non-sensitive settings only)
-        if os.path.exists(CONFIG_FILE):
-            try:
-                with open(CONFIG_FILE, 'r') as f:
-                    config = json.load(f)
-                    self.region_combo.setCurrentText(config.get('region', DEFAULT_REGION))
-                    
-                    # Only load project_id from file if not in environment
-                    if not env_project_id:
-                        self.project_id_input.setText(config.get('project_id', ''))
-            except json.JSONDecodeError as e:
-                logger.error(f"Invalid JSON in config file: {e}")
-                # Don't show error in status bar for preference loading issues
-            except IOError as e:
-                logger.error(f"Error reading config file: {e}")
-                # Don't show error in status bar for preference loading issues
     
-    def save_config(self) -> None:
-        """
-        Save non-sensitive preferences only.
-        
-        Never saves API keys or secrets to disk for security reasons.
-        """
-        # Only save non-sensitive preferences
-        config: Dict[str, str] = {
-            'region': self.region_combo.currentText(),
-        }
-        
-        # Only save project_id if it's not from environment variables
-        if not os.getenv(ENV_PROJECT_ID) and self.project_id_input.text():
-            config['project_id'] = self.project_id_input.text()
-        
-        try:
-            with open(CONFIG_FILE, 'w') as f:
-                json.dump(config, f, indent=2)
-            logger.info("Preferences saved to file")
-        except IOError as e:
-            logger.error(f"Error saving preferences: {e}")
-    
+
     def test_connection(self):
         """Test the API connection"""
         # Refresh environment variables if .env file exists (in case user edited it)
@@ -559,7 +521,7 @@ class ConfigTab(QWidget):
         self._update_status_bar("Testing connection...", "info")
     
     def on_test_complete(self, success, message):
-        """Handle test completion and save preferences if successful"""
+        """Handle test completion"""
         self.test_btn.setEnabled(True)
         self.test_btn.setText("Test Connection and Save")
         
@@ -572,9 +534,6 @@ class ConfigTab(QWidget):
                     self._update_status_bar("✅ Connection successful (using .env file)", "success")
                 else:
                     self._update_status_bar("✅ Connection successful", "success")
-                
-                # Automatically save preferences on successful connection
-                self._save_preferences_after_test()
                 
                 self.configValid.emit(True)
             else:
@@ -589,11 +548,7 @@ class ConfigTab(QWidget):
                 self._update_status_bar(f"❌ {message}", "error")
             self.configValid.emit(False)
     
-    def _save_preferences_after_test(self):
-        """Save preferences after successful connection test"""
-        # Call the existing save_config method
-        self.save_config()
-    
+
     def _get_error_explanation(self, message: str) -> Optional[str]:
         """
         Get a user-friendly explanation for common API errors.
@@ -1274,8 +1229,7 @@ class AmplitudeBulkAnnotator(QMainWindow):
         if success:
             self.show_completion_dialog(
                 "Success! ✅",
-                f"{message}\n\nYour annotations have been applied to the selected charts. "
-                f"You can view them in Amplitude."
+                f"{message}\n\nYour annotations have been applied to the selected charts."
             )
         else:
             self.show_completion_dialog(

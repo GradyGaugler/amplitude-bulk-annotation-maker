@@ -1,6 +1,5 @@
 # API Configuration and Environment Variables
 amplitude_config.json
-amplitude_preferences.json
 .env
 .env.local
 .env.production

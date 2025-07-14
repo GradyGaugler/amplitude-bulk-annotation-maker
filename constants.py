@@ -34,7 +34,6 @@ CHART_INPUT_MIN_HEIGHT: Final[int] = 150
 RESULTS_TEXT_MAX_HEIGHT: Final[int] = 150
 
 # File names
-CONFIG_FILE: Final[str] = "amplitude_preferences.json"
 DISTRIBUTION_DIR: Final[str] = "dist"
 DISTRIBUTION_INSTRUCTIONS_FILE: Final[str] = "DISTRIBUTION_INSTRUCTIONS.txt"
 

@@ -21,7 +21,6 @@ A Python GUI application for efficiently applying annotations to multiple Amplit
 - **✅ Smart Validation**: Real-time validation of chart IDs and URLs with visual feedback
 - **🔐 Secure Configuration**: Environment variable support with `.env` file integration
 - **🎯 Guided Workflow**: Step-by-step interface with manual progression control
-- **💾 Preference Storage**: Save non-sensitive settings for future sessions
 - **🔄 Auto-Configuration**: Seamless setup when environment variables are detected
 - **🎨 Modern Interface**: Clean, intuitive GUI built with PySide6
 - **📊 Chart Validation**: API-based validation to ensure charts exist before annotation
